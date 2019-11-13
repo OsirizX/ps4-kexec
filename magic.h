@@ -177,4 +177,5 @@
 #define kern_off_eap_hdd_key						0x2790C90
 #define kern_off_edid								0x281A3F4
 #define kern_off_wlanbt							    0x2BFBA0
+#define kern_off_kern_reboot						0x10D390
 #endif

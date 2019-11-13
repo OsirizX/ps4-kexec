@@ -9,6 +9,10 @@
  */
 
 #include "types.h"
+#include "kernel.h"
+#include "acpi.h"
+#include "acpi_io.h"
+#include "acpi_caps.h"
 
 #ifdef TESTING
 # include <stdio.h>
@@ -71,6 +75,41 @@ struct FADT {
     // more stuff...
 } PACKED;
 
+struct GAS {
+	u8 AddressSpaceID;
+	u8 RegisterBitWidth;
+	u8 RegisterBitOffset;
+	u8 AccessSize;
+	u64 Address;
+} PACKED;
+
+struct FACP
+{
+   u8 Signature[4];
+   u32 Length;
+   u8 unneded1[36 - 8];
+   u32 FIRMWARE_CTRL;
+   u32 DSDT;
+   u8 unneded2[46 - 44];
+   u16 SCI_INT;
+   u32 SMI_CMD;
+   u8 ACPI_ENABLE;
+   u8 ACPI_DISABLE;
+   u8 unneded3[64 - 54];
+   u32 PM1a_CNT_BLK;
+   u32 PM1b_CNT_BLK;
+   u8 unneded4[89 - 72];
+   u8 PM1_CNT_LEN;
+   u8 unneded5[112 - 90];
+   u32 Flags;
+   struct GAS RESET_REG;
+   u8 RESET_VALUE;
+   u16 ARM_BOOT_ARCH;
+   u8 FADTMinorVersion;
+   u64 X_FIRMWARE_CTRL;
+   u64 X_DSDT;
+} PACKED;
+
 struct ivhd_entry4 {
     u8 type;
     u16 devid;
@@ -97,6 +136,37 @@ struct IVRS {
     struct ivhd_entry4 hd_entries[3];
 } PACKED;
 
+struct MMIO {
+    u64	   baseAddressECM; 
+    u16    pciSegmentGroup; 
+    u8     startPCIBus; 
+    u8     endPCIBus; 
+    u32    reserved;
+} PACKED;
+
+struct MCFG {
+    struct SDTH hdr;
+	  u8 reserved[8];
+    struct MMIO mmio[];
+} PACKED;
+
+struct PCI_DEVICE_TYPE1 {
+    struct PCI_DEVICE common;
+    u32    bar0;
+    u32    bar1;
+    u32    primaryBusNumber : 8, secondaryBusNumber : 8, subordinateBusNumber : 8 , secondaryLatencyTimer : 8;
+    u32    IObase : 8, IOlimit : 8, secondaryStatus : 16;
+    u32    memoryBase : 16, memoryLimit : 16;
+    u32    prefetchableMemoryBase : 16, prefetchableMemoryLimit : 16;
+    u32    prefetchableBaseUpper32Bits;
+    u32    prefetchableLimitUpper32Bits;
+    u32    IOBaseUpper16Bits : 16, IOLimitUpper16Bits : 16;
+    u32    capabilitiesPointer : 8, reserved0 : 24;
+    u32    expansionROMbaseAddress;
+    u32    interruptLine : 8,  interruptPIN : 8, bridgeControl : 16;
+    //SEE: https://wiki.osdev.org/PCI#Configuration_Space
+} PACKED;
+
 // We have enough space to use the second half of the 64KB table area
 // as scratch space for building the tables
 #define BUFFER_OFF 0x8000
@@ -104,6 +174,7 @@ struct IVRS {
 #define P2M(p) (((u64)(p)) - phys_base + map_base)
 #define M2P(p) ((((void*)(p)) - map_base) + phys_base)
 #define B2P(p) ((((void*)(p)) - buf_base) + phys_base)
+#define P2B(p) ((((void*)(p)) - phys_base) + buf_base)
 
 #define ALIGN(s) p = (void*)((u64)(p + s - 1) & (-s))
 #define PADB(s) p += (s)
@@ -156,20 +227,20 @@ static void *build_ivrs(struct IVRS *ivrs) {
     memcpy(ivrs->hdr.oem_tid, "PS4KEXEC", 8);
     ivrs->hdr.oem_rev = 0x20161225;
     memcpy(ivrs->hdr.creator_id, "KEXC", 4);
-    ivrs->hdr.creator_rev = 0x20161225;
-    ivrs->IVinfo = 0x00203040;
+    ivrs->hdr.creator_rev = 0x20161225; 
+    ivrs->IVinfo = 0x00203040; //48882_IOMMU.pdf page 251
 
-    struct ivhd_header *hdr = &ivrs->hd_hdr;
+    struct ivhd_header *hdr = &ivrs->hd_hdr; //48882_IOMMU.pdf page 254
     hdr->type = 0x10;
     hdr->flags = /*coherent | */(1 << 5) | IVHD_FLAG_ISOC_EN_MASK;
     hdr->length = sizeof(ivrs->hd_hdr) + sizeof(ivrs->hd_entries);
     hdr->devid = PCI_DEVFN(0, 2);
     hdr->cap_ptr = 0x40; // from config space + 0x34
-    hdr->mmio_phys = 0xfc000000;
+    hdr->mmio_phys = 0xfc000000; //Base address of IOMMU control registers in MMIO space
     hdr->pci_seg = 0;
     hdr->info = 0; // msi msg num? (the pci cap should be written by software)
     // HATS = 0b10, PNBanks = 2, PNCounters = 4, IASup = 1
-    hdr->efr_attr = (2 << 30) | (2 << 17) | (4 << 13) | (1 << 5);
+    hdr->efr_attr = (2 << 30) | (2 << 17) | (4 << 13) | (1 << 5); //Feature Reporting Field, 48882_IOMMU.pdf page 255
 
     struct ivhd_entry4 *entries = &ivrs->hd_entries[0];
     // on fbsd, all aeolia devfns have active entries except memories (func 6)
@@ -184,16 +255,16 @@ static void *build_ivrs(struct IVRS *ivrs) {
     //     all others
 
     // the way to encode this info into the IVHD entries is fairly arbitrary...
-    entries[0].type = IVHD_DEV_SELECT;
-    entries[0].devid = PCI_DEVFN(20, 0);
+    entries[0].type = IVHD_DEV_SELECT; //DTE setting applies to the device specifed in DevID field.
+    entries[0].devid = PCI_DEVFN(20, 0); //vendorId: 104D, deviceId: 90D7; Sony Baikal ACPI
     entries[0].flags = ACPI_DEVFLAG_SYSMGT1 | ACPI_DEVFLAG_SYSMGT2;
 
     entries[1].type = IVHD_DEV_SELECT_RANGE_START;
     entries[1].devid = PCI_DEVFN(20, 1);
-    entries[1].flags = 0;
+    entries[1].flags = 0; //Identifies a device able to assert INIT interrupts (page 262)
     entries[2].type = IVHD_DEV_RANGE_END;
     entries[2].devid = PCI_DEVFN(20, 7);
-    entries[2].flags = 0;
+    entries[2].flags = 0; //Identifies a device able to assert INIT interrupts
 
     table_checksum(ivrs);
     return ivrs + 1;
@@ -278,6 +349,25 @@ void fix_acpi_tables(void *map_base, u64 phys_base)
     memcpy(map_base, buf_base, p - buf_base); 
 }
 
+u32 msi_mask(unsigned x) {
+	/* Don't shift by >= width of type */
+	if (x >= 5)
+		return 0xffffffff;
+	return (1 << (1 << x)) - 1;
+}
+void disableMSI(u64 MSICapabilityRegAddr) {
+  PPCI_MSI_CAPABILITY pMSICapability = (PPCI_MSI_CAPABILITY)PA_TO_DM(MSICapabilityRegAddr);
+  if (pMSICapability->msiEnable == 1) 
+    pMSICapability->msiEnable = 0;
+  pMSICapability->mask64 = msi_mask(pMSICapability->multipleMessageCapable);
+}
+
+void disablePM(u64 PMCapabilityRegAddr) {
+	PPCI_PM_CAPABILITY pPMCapability = (PPCI_PM_CAPABILITY)PA_TO_DM(PMCapabilityRegAddr);
+	//pPMCapability->PMCSR.ControlStatus.PMEEnable = 0b0;
+	//pPMCapability->PMCSR.ControlStatus.PMEStatus = 0b1;
+	pPMCapability->PMCSR.ControlStatus.PowerState = 0b11; //D3_hot (off)
+}
 
 #ifdef TESTING
 
