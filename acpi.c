@@ -11,7 +11,6 @@
 #include "types.h"
 #include "kernel.h"
 #include "acpi.h"
-#include "acpi_io.h"
 #include "acpi_caps.h"
 
 #ifdef TESTING
@@ -142,29 +141,6 @@ struct MMIO {
     u8     startPCIBus; 
     u8     endPCIBus; 
     u32    reserved;
-} PACKED;
-
-struct MCFG {
-    struct SDTH hdr;
-	  u8 reserved[8];
-    struct MMIO mmio[];
-} PACKED;
-
-struct PCI_DEVICE_TYPE1 {
-    struct PCI_DEVICE common;
-    u32    bar0;
-    u32    bar1;
-    u32    primaryBusNumber : 8, secondaryBusNumber : 8, subordinateBusNumber : 8 , secondaryLatencyTimer : 8;
-    u32    IObase : 8, IOlimit : 8, secondaryStatus : 16;
-    u32    memoryBase : 16, memoryLimit : 16;
-    u32    prefetchableMemoryBase : 16, prefetchableMemoryLimit : 16;
-    u32    prefetchableBaseUpper32Bits;
-    u32    prefetchableLimitUpper32Bits;
-    u32    IOBaseUpper16Bits : 16, IOLimitUpper16Bits : 16;
-    u32    capabilitiesPointer : 8, reserved0 : 24;
-    u32    expansionROMbaseAddress;
-    u32    interruptLine : 8,  interruptPIN : 8, bridgeControl : 16;
-    //SEE: https://wiki.osdev.org/PCI#Configuration_Space
 } PACKED;
 
 // We have enough space to use the second half of the 64KB table area
@@ -360,13 +336,6 @@ void disableMSI(u64 MSICapabilityRegAddr) {
   if (pMSICapability->msiEnable == 1) 
     pMSICapability->msiEnable = 0;
   pMSICapability->mask64 = msi_mask(pMSICapability->multipleMessageCapable);
-}
-
-void disablePM(u64 PMCapabilityRegAddr) {
-	PPCI_PM_CAPABILITY pPMCapability = (PPCI_PM_CAPABILITY)PA_TO_DM(PMCapabilityRegAddr);
-	//pPMCapability->PMCSR.ControlStatus.PMEEnable = 0b0;
-	//pPMCapability->PMCSR.ControlStatus.PMEStatus = 0b1;
-	pPMCapability->PMCSR.ControlStatus.PowerState = 0b11; //D3_hot (off)
 }
 
 #ifdef TESTING

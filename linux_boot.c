@@ -350,19 +350,6 @@ static void cpu_quiesce_gate(void *arg)
     disableMSI(0xf80a60e0); //func = 6 Baikal Baikal Memory (DDR3/SPM)
     disableMSI(0xf80a70e0); //func = 7 Baikal Baikal USB 3.0 xHCI Host Controller
 
-    /*
-    // Disable all PM on Baikal (bus=0, slot=20)
-    disablePM(0xf80a00f8); //func = 0 Baikal ACPI
-    disablePM(0xf80a10f8); //func = 1 Baikal Ethernet Controller
-    disablePM(0xf80a20f8); //func = 2 Baikal SATA AHCI Controller
-    disablePM(0xf80a30f8); //func = 3 Baikal SD/MMC Host Controller
-    disablePM(0xf80a40f8); //func = 4 Baikal PCI Express Glue and Miscellaneous Devices
-    disablePM(0xf80a50f8); //func = 5 Baikal DMA Controller
-    disablePM(0xf80a60f8); //func = 6 Baikal Baikal Memory (DDR3/SPM)
-    disablePM(0xf80a70f8); //func = 7 Baikal Baikal USB 3.0 xHCI Host Controller
-    */
-
-
     // Stop HPET timers
 	//*(volatile u64 *)PA_TO_DM(BPCIE_BAR2 + BPCIE_HPET_BASE + 0x10) &= ~(1UL << 0);  //General Configuration Register
 	/*
