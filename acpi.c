@@ -74,41 +74,6 @@ struct FADT {
     // more stuff...
 } PACKED;
 
-struct GAS {
-	u8 AddressSpaceID;
-	u8 RegisterBitWidth;
-	u8 RegisterBitOffset;
-	u8 AccessSize;
-	u64 Address;
-} PACKED;
-
-struct FACP
-{
-   u8 Signature[4];
-   u32 Length;
-   u8 unneded1[36 - 8];
-   u32 FIRMWARE_CTRL;
-   u32 DSDT;
-   u8 unneded2[46 - 44];
-   u16 SCI_INT;
-   u32 SMI_CMD;
-   u8 ACPI_ENABLE;
-   u8 ACPI_DISABLE;
-   u8 unneded3[64 - 54];
-   u32 PM1a_CNT_BLK;
-   u32 PM1b_CNT_BLK;
-   u8 unneded4[89 - 72];
-   u8 PM1_CNT_LEN;
-   u8 unneded5[112 - 90];
-   u32 Flags;
-   struct GAS RESET_REG;
-   u8 RESET_VALUE;
-   u16 ARM_BOOT_ARCH;
-   u8 FADTMinorVersion;
-   u64 X_FIRMWARE_CTRL;
-   u64 X_DSDT;
-} PACKED;
-
 struct ivhd_entry4 {
     u8 type;
     u16 devid;
